@@ -1,12 +1,14 @@
-import express from 'express';
-import bodyParser from 'body-parser';
-import graphqlHttp from 'express-graphql';
-import pkg from 'graphql';
-const { buildSchema } = pkg;
+const express = require('express');
+const bodyParser = require('body-parser');
+const graphqlHttp = require('express-graphql');
+const { buildSchema } = require('graphql');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const EventModel = require('./models/event');
+const UserModel = require('./models/user');
 
 const app = express();
-
-const events = [];
 
 app.use(bodyParser.json());
 
@@ -22,11 +24,24 @@ app.use(
         date: String!
       }
 
+      type User {
+        _id: ID!,
+        username: String!,
+        email: String!,
+        password: String
+      }
+
       input EventInput {
         title: String!
         description: String!
         price: Float!
         date: String!
+      }
+
+      input UserInput {
+        username: String!
+        email: String!,
+        password: String!
       }
 
       type RootQuery {
@@ -35,6 +50,7 @@ app.use(
 
       type RootMutation {
         createEvent(eventInput: EventInput): Event
+        createUser(userInput: UserInput): User
       }
 
       schema {
@@ -43,24 +59,74 @@ app.use(
       }
     `),
     rootValue: {
-      events: () => {
-        return events;
+      events: async () => {
+        try {
+          return await EventModel.find();
+        } catch (err) {
+          console.log(err);
+          throw err;
+        }
       },
-      createEvent: (args) => {
-        const event = {
-          _id: Math.random().toString(),
+      createEvent: async (args) => {
+        const event = new EventModel({
           title: args.eventInput.title,
           description: args.eventInput.description,
           price: +args.eventInput.price,
-          date: args.eventInput.date
-        };
-        console.log(args.eventInput);
-        events.push(event);
-        return event;
+          date: new Date(args.eventInput.date),
+          creator: '5ef1418289e49ab3cac71067'
+        });
+        try {
+          const savedEvent = await event.save();
+          const user = await UserModel.findById('5ef1418289e49ab3cac71067');
+          if (!user) {
+            throw new Error('User not found');
+          }
+          user.createdEvents.push(savedEvent);
+          await user.save();
+          return { ...savedEvent._doc, _id: event.id };
+        } catch (err) {
+          console.log(err);
+          throw err;
+        }
+      },
+      createUser: async (args) => {
+        try {
+          // Check existing email
+          const existingUser = await UserModel.findOne({
+            email: args.userInput.email
+          });
+          if (existingUser) {
+            throw new Error('User already exists');
+          }
+
+          // Hash PW
+          const hashedPw = await bcrypt.hash(args.userInput.password, 12);
+          const user = new UserModel({
+            username: args.userInput.username,
+            email: args.userInput.email,
+            password: hashedPw
+          });
+
+          // Save User
+          const savedUser = await user.save();
+          return { ...savedUser._doc, password: null, id: savedUser.id };
+        } catch (err) {
+          console.log(err);
+          throw err;
+        }
       }
     },
     graphiql: true
   })
 );
 
-app.listen(3000);
+mongoose
+  .connect(
+    `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PW}@cluster0-wabpp.mongodb.net/${process.env.MONGO_DB}?retryWrites=true&w=majority`
+  )
+  .then(() => {
+    app.listen(3000);
+  })
+  .catch((err) => {
+    console.log(err);
+  });

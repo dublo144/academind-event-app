@@ -8,3 +8,4 @@ coverage/
 /build
 .nyc_output/
 cypress.env.json
+nodemon.json
