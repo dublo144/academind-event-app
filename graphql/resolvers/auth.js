@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const UserModel = require('../../models/user');
+const jwt = require('jsonwebtoken');
 
 module.exports = {
   createUser: async (args) => {
@@ -27,5 +28,32 @@ module.exports = {
       console.log(err);
       throw err;
     }
+  },
+  login: async ({ email, password }) => {
+    const user = await UserModel.findOne({ email });
+    if (!user) {
+      console.log('User not found');
+      throw new Error('Invalid Credentials.');
+    }
+    const authenticated = await bcrypt.compare(password, user.password);
+    if (!authenticated) {
+      console.log('Incorrect Password');
+      throw new Error('Invalid credentials.');
+    }
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        email: user.email
+      },
+      process.env.SECRET,
+      {
+        expiresIn: '1h'
+      }
+    );
+    return {
+      userId: user.id,
+      token,
+      tokenExpiration: 1
+    };
   }
 };
