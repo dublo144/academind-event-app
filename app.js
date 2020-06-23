@@ -12,6 +12,36 @@ const app = express();
 
 app.use(bodyParser.json());
 
+const events = async (eventIds) => {
+  try {
+    const events = await EventModel.find({ _id: { $in: eventIds } });
+    return events.map((event) => {
+      return {
+        ...event._doc,
+        _id: event.id,
+        creator: user.bind(this, event.creator)
+      };
+    });
+  } catch (err) {
+    console.log(err);
+    throw err;
+  }
+};
+
+const user = async (userID) => {
+  try {
+    const user = await UserModel.findById(userID);
+    return {
+      ...user._doc,
+      id: user.id,
+      createdEvents: events.bind(this, user._doc.createdEvents)
+    };
+  } catch (err) {
+    console.log(err);
+    throw err;
+  }
+};
+
 app.use(
   '/graphql',
   graphqlHttp({
@@ -22,13 +52,15 @@ app.use(
         description: String!
         price: Float!
         date: String!
+        creator: User!
       }
 
       type User {
-        _id: ID!,
-        username: String!,
-        email: String!,
+        _id: ID!
+        username: String!
+        email: String!
         password: String
+        createdEvents: [Event!]
       }
 
       input EventInput {
@@ -61,7 +93,12 @@ app.use(
     rootValue: {
       events: async () => {
         try {
-          return await EventModel.find();
+          const events = await EventModel.find();
+          return events.map((event) => ({
+            ...event._doc,
+            _id: event.id,
+            creator: user.bind(this, event._doc.creator)
+          }));
         } catch (err) {
           console.log(err);
           throw err;
@@ -76,7 +113,12 @@ app.use(
           creator: '5ef1418289e49ab3cac71067'
         });
         try {
-          const savedEvent = await event.save();
+          const result = await event.save();
+          const savedEvent = {
+            ...result._doc,
+            _id: event.id,
+            creator: user.bind(this, result._doc.creator)
+          };
           const user = await UserModel.findById('5ef1418289e49ab3cac71067');
           if (!user) {
             throw new Error('User not found');
